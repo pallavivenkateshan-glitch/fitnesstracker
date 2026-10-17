@@ -1,36 +1,112 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FitTrack — Personal Fitness & Nutrition Tracker
 
-## Getting Started
+A personal web dashboard that tracks daily nutrition (via meal photos + manual entry), syncs Strava activities, logs weekly weight, and delivers AI-powered insights and interactive chat.
 
-First, run the development server:
+## Features
+
+- **Meal Logging** — Upload a photo and Claude AI estimates your macros automatically. Edit, confirm, and save.
+- **Meal Library** — Save recurring meals for quick re-use. Time-of-day detection surfaces the right meals (breakfast in the morning, dinner in the evening).
+- **Strava Integration** — Connect your Strava account and sync activities. Automatically parses strength data (Squat/Bench/Deadlift + accessories) from your activity notes.
+- **Strength Tracking** — Progressive overload charts for Squat, Bench, and Deadlift with PRs highlighted. Accessory work log.
+- **Weekly Weight Log** — Log your weight once a week and track trends over time.
+- **AI Daily Insights** — Auto-generated daily summary correlating your nutrition, activity, and trends.
+- **AI Chat** — Ask your personal coach anything about your data: "Am I eating enough protein?" or "How has my bench progressed?"
+
+## Tech Stack
+
+- **Frontend**: Next.js 15 (App Router) + TypeScript + Tailwind CSS
+- **Database**: Supabase (PostgreSQL + Auth + Storage)
+- **AI**: Anthropic API — `claude-sonnet-5-5`
+- **Fitness API**: Strava API v3
+- **Hosting**: Vercel (frontend) + Supabase (database)
+- **Charts**: Recharts
+
+## Setup Guide
+
+### 1. Prerequisites
+
+- Node.js 18+ installed
+- A Supabase account (free at [supabase.com](https://supabase.com))
+- An Anthropic API key (at [console.anthropic.com](https://console.anthropic.com))
+- A Strava API app (at [strava.com/settings/api](https://www.strava.com/settings/api))
+
+### 2. Clone & Install
+
+```bash
+git clone <your-repo-url>
+cd fitness-tracker
+npm install
+```
+
+### 3. Set Up Supabase
+
+1. Create a new Supabase project at [app.supabase.com](https://app.supabase.com)
+2. Go to **SQL Editor** and run the contents of `supabase-schema.sql`
+3. Go to **Storage** → create a new bucket called `meal-photos` → set it to **Public**
+4. Copy your **Project URL** and **anon key** from Settings → API
+
+### 4. Set Up Strava API
+
+1. Go to [strava.com/settings/api](https://www.strava.com/settings/api)
+2. Create an app (or use your existing one)
+3. Set the **Authorization Callback Domain** to `localhost` for local dev, and your Vercel domain for production
+4. Copy your **Client ID** and **Client Secret**
+
+### 5. Environment Variables
+
+Create a `.env.local` file (never commit this to GitHub):
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+ANTHROPIC_API_KEY=your_anthropic_key
+
+STRAVA_CLIENT_ID=your_strava_client_id
+STRAVA_CLIENT_SECRET=your_strava_client_secret
+NEXT_PUBLIC_STRAVA_CLIENT_ID=your_strava_client_id
+
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+### 6. Run Locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 7. Deploy to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Push this repo to GitHub
+2. Go to [vercel.com](https://vercel.com) → New Project → Import your GitHub repo
+3. Add all environment variables from `.env.local` in the Vercel dashboard (set `NEXT_PUBLIC_APP_URL` to your Vercel domain)
+4. Deploy — Vercel auto-deploys on every push to `main`
 
-## Learn More
+## Adding Your Strava Notes for Strength Tracking
 
-To learn more about Next.js, take a look at the following resources:
+In Strava, when you log a workout, add notes in this format and the AI will parse them automatically:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+Squat 100kg 3x5, Bench 80kg 3x8, Deadlift 140kg 1x3
+20 push-ups, 10 pull-ups
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+You can write it naturally — the AI handles variations.
 
-## Deploy on Vercel
+## GitHub Workflow
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `main` branch = live app on Vercel
+- New features → new branch → PR → merge to `main` → auto-deploys
+- Never push secrets — `.env.local` is git-ignored
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Estimated Monthly Cost
+
+| Service | Cost |
+|---|---|
+| Vercel | Free |
+| Supabase | Free (up to 500MB) |
+| Anthropic API (claude-sonnet-5-5) | ~$2–4/month |
+| **Total** | **~$2–4/month** |
