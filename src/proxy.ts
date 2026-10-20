@@ -1,20 +1,35 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
 
 export async function proxy(request: NextRequest) {
-  // If Supabase env vars are missing, skip auth middleware gracefully
+  const { pathname } = request.nextUrl
+
+  // Skip middleware for static files
   if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL === 'your_supabase_project_url'
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/favicon')
+  ) {
+    return NextResponse.next()
+  }
+
+  // If Supabase env vars are missing or placeholder, skip auth entirely
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (
+    !supabaseUrl ||
+    !supabaseKey ||
+    supabaseUrl.includes('your_supabase') ||
+    supabaseKey.includes('your_supabase')
   ) {
     return NextResponse.next()
   }
 
   try {
+    const { updateSession } = await import('@/lib/supabase/middleware')
     return await updateSession(request)
   } catch (e) {
-    console.error('Proxy error:', e)
+    console.error('Proxy middleware error:', e)
+    // On any error, just let the request through rather than 404
     return NextResponse.next()
   }
 }
