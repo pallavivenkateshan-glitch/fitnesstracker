@@ -110,3 +110,4 @@ You can write it naturally — the AI handles variations.
 | Supabase | Free (up to 500MB) |
 | Anthropic API (claude-sonnet-5-5) | ~$2–4/month |
 | **Total** | **~$2–4/month** |
+# trigger deploy
