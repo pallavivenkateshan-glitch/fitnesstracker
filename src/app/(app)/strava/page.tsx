@@ -13,21 +13,38 @@ export default async function StravaServerPage({
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  const { data: tokenRow } = await supabase
-    .from('strava_tokens')
-    .select('expires_at, updated_at')
-    .eq('user_id', user.id)
-    .single()
+  // Run both queries in parallel
+  const [{ data: tokenRow }, { data: activities }] = await Promise.all([
+    supabase
+      .from('strava_tokens')
+      .select('expires_at, updated_at')
+      .eq('user_id', user.id)
+      .single(),
 
-  const { data: activities } = await supabase
-    .from('activities')
-    .select(`
-      *,
-      strength_logs (*)
-    `)
-    .eq('user_id', user.id)
-    .order('logged_at', { ascending: false })
-    .limit(20)
+    supabase
+      .from('activities')
+      .select(`
+        id,
+        strava_id,
+        type,
+        name,
+        distance,
+        duration,
+        heart_rate_avg,
+        elevation,
+        notes_raw,
+        logged_at,
+        strength_logs (
+          squat_weight, squat_sets, squat_reps,
+          bench_weight, bench_sets, bench_reps,
+          deadlift_weight, deadlift_sets, deadlift_reps,
+          extras
+        )
+      `)
+      .eq('user_id', user.id)
+      .order('logged_at', { ascending: false })
+      .limit(30),
+  ])
 
   return (
     <StravaPage
