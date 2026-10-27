@@ -22,37 +22,53 @@ export default function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  async function sendMessage(content: string) {
-    if (!content.trim() || loading) return
+ async function sendMessage(content: string) {
+      if (!content.trim() || loading) return
 
-    const userMessage: ChatMessage = { role: 'user', content: content.trim() }
-    const updatedMessages = [...messages, userMessage]
-    setMessages(updatedMessages)
-    setInput('')
-    setLoading(true)
+      const userMessage: ChatMessage = { role: 'user', content: content.trim() }
+      const updatedMessages = [...messages, userMessage]
+      setMessages(updatedMessages)
+      setInput('')
+      setLoading(true)
 
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: updatedMessages }),
-      })
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: updatedMessages }),
+        })
 
-      const data = await res.json()
-      const assistantMessage: ChatMessage = {
-        role: 'assistant',
-        content: data.reply ?? 'Sorry, I couldn\'t get a response. Please try again.',
+        // ✅ FIX: check for HTTP errors before reading the body
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          console.error('Chat API error:', res.status, err)
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: `Error ${res.status}: ${err.error ?? 'Unknown error — check Vercel logs for details.'}`,
+            },
+          ])
+          return
+        }
+
+        const data = await res.json()
+        const assistantMessage: ChatMessage = {
+          role: 'assistant',
+          content: data.reply ?? "Sorry, I couldn't get a response. Please try again.",
+        }
+        setMessages((prev) => [...prev, assistantMessage])
+      } catch (err) {
+        console.error('Chat fetch failed:', err)
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: 'Network error — could not reach the server. Please try again.' },
+        ])
+      } finally {
+        setLoading(false)
       }
-      setMessages((prev) => [...prev, assistantMessage])
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'Something went wrong. Please try again.' },
-      ])
-    } finally {
-      setLoading(false)
     }
-  }
+
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
