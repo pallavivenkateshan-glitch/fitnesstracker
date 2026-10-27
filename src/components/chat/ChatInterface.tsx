@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Sparkles, User } from 'lucide-react'
+import { Send, Sparkles, User, Trash2 } from 'lucide-react'
 import type { ChatMessage } from '@/lib/types'
 
 const SUGGESTED_QUESTIONS = [
@@ -11,8 +11,8 @@ const SUGGESTED_QUESTIONS = [
   'What should I focus on this week?',
 ]
 
-export default function ChatInterface() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+export default function ChatInterface({ initialMessages = [] }: { initialMessages?: ChatMessage[] }) {
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -22,53 +22,58 @@ export default function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
- async function sendMessage(content: string) {
-      if (!content.trim() || loading) return
+  async function sendMessage(content: string) {
+    if (!content.trim() || loading) return
 
-      const userMessage: ChatMessage = { role: 'user', content: content.trim() }
-      const updatedMessages = [...messages, userMessage]
-      setMessages(updatedMessages)
-      setInput('')
-      setLoading(true)
+    const userMessage: ChatMessage = { role: 'user', content: content.trim() }
+    const updatedMessages = [...messages, userMessage]
+    setMessages(updatedMessages)
+    setInput('')
+    setLoading(true)
 
-      try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: updatedMessages }),
-        })
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: updatedMessages }),
+      })
 
-        // ✅ FIX: check for HTTP errors before reading the body
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          console.error('Chat API error:', res.status, err)
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'assistant',
-              content: `Error ${res.status}: ${err.error ?? 'Unknown error — check Vercel logs for details.'}`,
-            },
-          ])
-          return
-        }
-
-        const data = await res.json()
-        const assistantMessage: ChatMessage = {
-          role: 'assistant',
-          content: data.reply ?? "Sorry, I couldn't get a response. Please try again.",
-        }
-        setMessages((prev) => [...prev, assistantMessage])
-      } catch (err) {
-        console.error('Chat fetch failed:', err)
+      // ✅ FIX: check for HTTP errors before reading the body
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error('Chat API error:', res.status, err)
         setMessages((prev) => [
           ...prev,
-          { role: 'assistant', content: 'Network error — could not reach the server. Please try again.' },
+          {
+            role: 'assistant',
+            content: `Error ${res.status}: ${err.error ?? 'Unknown error — check Vercel logs for details.'}`,
+          },
         ])
-      } finally {
-        setLoading(false)
+        return
       }
-    }
 
+      const data = await res.json()
+      const assistantMessage: ChatMessage = {
+        role: 'assistant',
+        content: data.reply ?? "Sorry, I couldn't get a response. Please try again.",
+      }
+      setMessages((prev) => [...prev, assistantMessage])
+    } catch (err) {
+      console.error('Chat fetch failed:', err)
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'Network error — could not reach the server. Please try again.' },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function clearHistory() {
+    if (!confirm('Clear your entire chat history?')) return
+    const res = await fetch('/api/chat', { method: 'DELETE' })
+    if (res.ok) setMessages([])
+  }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -79,6 +84,14 @@ export default function ChatInterface() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
+      {messages.length > 0 && (
+        <button
+          onClick={clearHistory}
+          className="self-end mb-2 flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 cursor-pointer"
+        >
+          <Trash2 className="w-3 h-3" /> Clear history
+        </button>
+      )}
       {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 min-h-0">
         {messages.length === 0 ? (
@@ -126,7 +139,7 @@ export default function ChatInterface() {
                       : 'bg-gray-900 border border-gray-800 text-gray-200 rounded-tl-none'
                   }`}
                 >
-                  {msg.content}
+                  <span className="whitespace-pre-wrap">{msg.content}</span>
                 </div>
               </div>
             ))}
