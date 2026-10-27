@@ -15,6 +15,64 @@ async function refreshStravaToken(refreshToken: string) {
   return res.json()
 }
 
+async function fetchActivityDetail(activityId: number, accessToken: string) {
+  const res = await fetch(
+    `https://www.strava.com/api/v3/activities/${activityId}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  )
+  return res.json()
+}
+
+async function parseAndSaveStrength(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createClient>>,
+  notes: string,
+  userId: string,
+  activityId: string,
+  loggedAt: string
+): Promise<boolean> {
+  try {
+    const parseRes = await fetch(
+      `${process.env.NEXT_PUBLIC_APP_URL}/api/parse-strength`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes }),
+      }
+    )
+    const { data: strengthData } = await parseRes.json()
+
+    if (!strengthData) return false
+
+    const hasStrengthData =
+      strengthData.squat?.weight_kg ||
+      strengthData.bench?.weight_kg ||
+      strengthData.deadlift?.weight_kg ||
+      strengthData.extras?.length > 0
+
+    if (!hasStrengthData) return false
+
+    await supabase.from('strength_logs').insert({
+      user_id: userId,
+      activity_id: activityId,
+      squat_weight: strengthData.squat?.weight_kg,
+      squat_sets: strengthData.squat?.sets,
+      squat_reps: strengthData.squat?.reps,
+      bench_weight: strengthData.bench?.weight_kg,
+      bench_sets: strengthData.bench?.sets,
+      bench_reps: strengthData.bench?.reps,
+      deadlift_weight: strengthData.deadlift?.weight_kg,
+      deadlift_sets: strengthData.deadlift?.sets,
+      deadlift_reps: strengthData.deadlift?.reps,
+      extras: strengthData.extras ?? [],
+      logged_at: loggedAt,
+    })
+    return true
+  } catch (e) {
+    console.error('Strength parse error for activity', activityId, e)
+    return false
+  }
+}
+
 export async function POST() {
   try {
     const supabase = await createClient()
@@ -60,19 +118,61 @@ export async function POST() {
       return NextResponse.json({ error: 'Failed to fetch Strava activities' }, { status: 500 })
     }
 
-    let synced = 0
-    let parsed = 0
+    let synced = 0    // new activities inserted
+    let updated = 0   // existing activities updated with notes
+    let parsed = 0    // strength logs created
 
     for (const activity of stravaActivities) {
       // Check if already imported
       const { data: existing } = await supabase
         .from('activities')
-        .select('id')
+        .select('id, notes_raw')
         .eq('strava_id', activity.id.toString())
         .single()
 
-      if (existing) continue
+      // Fetch full activity detail to get private_note
+      let notes = ''
+      try {
+        const detail = await fetchActivityDetail(activity.id, accessToken)
+        // Prefer private_note, fall back to description
+        notes = detail.private_note?.trim() || detail.description?.trim() || ''
+      } catch (e) {
+        console.error('Failed to fetch detail for activity', activity.id, e)
+        notes = activity.description?.trim() || ''
+      }
 
+      if (existing) {
+        // ── UPDATE PATH: existing activity with no notes yet ──
+        if (!existing.notes_raw && notes) {
+          await supabase
+            .from('activities')
+            .update({ notes_raw: notes })
+            .eq('id', existing.id)
+
+          updated++
+
+          // Check if a strength log already exists for this activity
+          const { data: existingStrength } = await supabase
+            .from('strength_logs')
+            .select('id')
+            .eq('activity_id', existing.id)
+            .single()
+
+          if (!existingStrength) {
+            const didParse = await parseAndSaveStrength(
+              supabase,
+              notes,
+              user.id,
+              existing.id,
+              activity.start_date
+            )
+            if (didParse) parsed++
+          }
+        }
+        continue
+      }
+
+      // ── INSERT PATH: brand new activity ──
       const { data: inserted } = await supabase
         .from('activities')
         .insert({
@@ -85,7 +185,7 @@ export async function POST() {
           heart_rate_avg: activity.average_heartrate,
           elevation: activity.total_elevation_gain,
           pace: activity.average_speed,
-          notes_raw: activity.description,
+          notes_raw: notes,
           logged_at: activity.start_date,
         })
         .select()
@@ -94,53 +194,25 @@ export async function POST() {
       if (inserted) {
         synced++
 
-        // Parse strength data from notes if present
-        if (activity.description?.trim()) {
-          try {
-            const parseRes = await fetch(
-              `${process.env.NEXT_PUBLIC_APP_URL}/api/parse-strength`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ notes: activity.description }),
-              }
-            )
-            const { data: strengthData } = await parseRes.json()
-
-            if (strengthData) {
-              const hasStrengthData =
-                strengthData.squat?.weight_kg ||
-                strengthData.bench?.weight_kg ||
-                strengthData.deadlift?.weight_kg ||
-                strengthData.extras?.length > 0
-
-              if (hasStrengthData) {
-                await supabase.from('strength_logs').insert({
-                  user_id: user.id,
-                  activity_id: inserted.id,
-                  squat_weight: strengthData.squat?.weight_kg,
-                  squat_sets: strengthData.squat?.sets,
-                  squat_reps: strengthData.squat?.reps,
-                  bench_weight: strengthData.bench?.weight_kg,
-                  bench_sets: strengthData.bench?.sets,
-                  bench_reps: strengthData.bench?.reps,
-                  deadlift_weight: strengthData.deadlift?.weight_kg,
-                  deadlift_sets: strengthData.deadlift?.sets,
-                  deadlift_reps: strengthData.deadlift?.reps,
-                  extras: strengthData.extras ?? [],
-                  logged_at: activity.start_date,
-                })
-                parsed++
-              }
-            }
-          } catch (e) {
-            console.error('Strength parse error for activity', activity.id, e)
-          }
+        if (notes) {
+          const didParse = await parseAndSaveStrength(
+            supabase,
+            notes,
+            user.id,
+            inserted.id,
+            activity.start_date
+          )
+          if (didParse) parsed++
         }
       }
     }
 
-    return NextResponse.json({ synced, parsed, message: `Synced ${synced} new activities, parsed ${parsed} strength logs` })
+    return NextResponse.json({
+      synced,
+      updated,
+      parsed,
+      message: `Synced ${synced} new activities, updated ${updated} with notes, parsed ${parsed} strength logs`,
+    })
   } catch (error) {
     console.error('Strava sync error:', error)
     return NextResponse.json({ error: 'Sync failed' }, { status: 500 })
