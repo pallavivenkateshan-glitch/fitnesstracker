@@ -52,7 +52,8 @@ ${contextData}`
       })),
     })
 
-    const reply = response.content[0].type === 'text' ? response.content[0].text : ''
+  const textBlock = response.content.find((b) => b.type === 'text')
+  const reply = textBlock?.type === 'text' ? textBlock.text : ''
     return NextResponse.json({ reply })
   } catch (error) {
     console.error('Chat error:', error)
