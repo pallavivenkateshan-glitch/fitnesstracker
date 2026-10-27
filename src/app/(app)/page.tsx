@@ -21,53 +21,57 @@ export default async function DashboardPage() {
   const todayEnd = endOfDay(today).toISOString()
   const weekAgo = subDays(today, 6).toISOString()
 
-  // Fetch today's meals
-  const { data: todayMeals } = await supabase
-    .from('meals')
-    .select('*')
-    .eq('user_id', user.id)
-    .gte('logged_at', todayStart)
-    .lte('logged_at', todayEnd)
-    .order('logged_at', { ascending: true })
+  // Run all queries in parallel instead of sequentially
+  const [
+    { data: todayMeals },
+    { data: weekMeals },
+    { data: settings },
+    { data: insight },
+    { data: activities },
+    { data: weightLogs },
+  ] = await Promise.all([
+    supabase
+      .from('meals')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('logged_at', todayStart)
+      .lte('logged_at', todayEnd)
+      .order('logged_at', { ascending: true }),
 
-  // Fetch last 7 days of meals for chart
-  const { data: weekMeals } = await supabase
-    .from('meals')
-    .select('calories, logged_at')
-    .eq('user_id', user.id)
-    .gte('logged_at', weekAgo)
-    .order('logged_at', { ascending: true })
+    supabase
+      .from('meals')
+      .select('calories, logged_at')
+      .eq('user_id', user.id)
+      .gte('logged_at', weekAgo)
+      .order('logged_at', { ascending: true }),
 
-  // Fetch user settings
-  const { data: settings } = await supabase
-    .from('user_settings')
-    .select('*')
-    .eq('user_id', user.id)
-    .single()
+    supabase
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', user.id)
+      .single(),
 
-  // Fetch today's cached insight
-  const { data: insight } = await supabase
-    .from('daily_insights')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('date', format(today, 'yyyy-MM-dd'))
-    .single()
+    supabase
+      .from('daily_insights')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('date', format(today, 'yyyy-MM-dd'))
+      .single(),
 
-  // Fetch recent activities (last 5)
-  const { data: activities } = await supabase
-    .from('activities')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('logged_at', { ascending: false })
-    .limit(5)
+    supabase
+      .from('activities')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('logged_at', { ascending: false })
+      .limit(5),
 
-  // Fetch latest weight
-  const { data: weightLogs } = await supabase
-    .from('weight_logs')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('logged_at', { ascending: false })
-    .limit(8)
+    supabase
+      .from('weight_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('logged_at', { ascending: false })
+      .limit(8),
+  ])
 
   const macroTargets = settings ?? {
     calorie_target: 2000,
@@ -111,12 +115,9 @@ export default async function DashboardPage() {
 
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Today's meals */}
         <div className="lg:col-span-2">
           <TodayMeals meals={todayMeals ?? []} />
         </div>
-
-        {/* Right column */}
         <div className="space-y-6">
           <WeightWidget weightLogs={weightLogs ?? []} unit={settings?.weight_unit ?? 'kg'} />
         </div>
