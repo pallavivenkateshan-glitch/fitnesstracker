@@ -19,7 +19,7 @@ interface StrengthLog {
   squat_weight?: number; squat_sets?: number; squat_reps?: number
   bench_weight?: number; bench_sets?: number; bench_reps?: number
   deadlift_weight?: number; deadlift_sets?: number; deadlift_reps?: number
-  extras?: { exercise: string; sets?: number; reps?: number }[]
+  extras?: { exercise: string; sets?: number; reps?: number; weight_kg?: number }[]
   logged_at: string
   activities?: { name: string; type: string; logged_at: string }
 }
@@ -134,15 +134,22 @@ function LiftChart({
 export default function StrengthDashboard({ logs }: { logs: StrengthLog[] }) {
   const [unit, setUnit] = useState<Unit>('kg')
 
-  // Collect all unique accessory exercises
-  const accessoryMap: Record<string, { date: string; sets?: number; reps?: number }[]> = {}
+  // Collect all unique accessory exercises with full details
+  const accessoryMap: Record<string, {
+    date: string
+    weight_kg?: number
+    sets?: number
+    reps?: number
+  }[]> = {}
+
   logs.forEach((log) => {
     const extras = log.extras ?? []
     extras.forEach((ex) => {
       const name = ex.exercise.toLowerCase()
       if (!accessoryMap[name]) accessoryMap[name] = []
       accessoryMap[name].push({
-        date: format(parseISO(log.logged_at), 'MMM d'),
+        date: format(parseISO(log.logged_at), 'MMM d, yyyy'),
+        weight_kg: ex.weight_kg ?? undefined,
         sets: ex.sets ?? undefined,
         reps: ex.reps ?? undefined,
       })
@@ -178,33 +185,52 @@ export default function StrengthDashboard({ logs }: { logs: StrengthLog[] }) {
         <LiftChart logs={logs} weightField="deadlift_weight" setField="deadlift_sets" repField="deadlift_reps" label="Deadlift" color="#ef4444" unit={unit} />
       </div>
 
-      {/* Accessory work */}
+      {/* Accessory work — full details in a table */}
       {accessoryNames.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
           <h2 className="text-white font-semibold mb-4">Accessory Work</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-gray-500 text-xs">
-                  <th className="text-left pb-3 font-medium">Exercise</th>
-                  <th className="text-left pb-3 font-medium">Recent entries</th>
+                <tr className="border-b border-gray-800 text-gray-500 text-xs">
+                  <th className="text-left pb-3 font-medium pr-6">Exercise</th>
+                  <th className="text-left pb-3 font-medium pr-6">Date</th>
+                  <th className="text-left pb-3 font-medium pr-6">Weight</th>
+                  <th className="text-left pb-3 font-medium pr-6">Sets</th>
+                  <th className="text-left pb-3 font-medium">Reps</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800">
-                {accessoryNames.map((name) => (
-                  <tr key={name} className="text-gray-300">
-                    <td className="py-3 pr-4 capitalize font-medium text-white">{name}</td>
-                    <td className="py-3">
-                      <div className="flex flex-wrap gap-2">
-                        {accessoryMap[name].slice(-5).map((entry, i) => (
-                          <span key={i} className="text-xs bg-gray-800 px-2 py-1 rounded-lg">
-                            {entry.date}: {entry.sets ? `${entry.sets}×` : ''}{entry.reps ?? '—'}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-gray-800/50">
+                {accessoryNames.map((name) =>
+                  // Show all entries for each exercise, most recent first
+                  [...accessoryMap[name]].reverse().map((entry, i) => (
+                    <tr key={`${name}-${i}`} className="text-gray-300 hover:bg-gray-800/30 transition">
+                      {/* Only show exercise name on first row for that exercise */}
+                      <td className="py-2.5 pr-6 align-top">
+                        {i === 0 ? (
+                          <span className="capitalize font-medium text-white">{name}</span>
+                        ) : (
+                          <span className="text-gray-700 text-xs">↳</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-6 text-gray-400 text-xs whitespace-nowrap">
+                        {entry.date}
+                      </td>
+                      <td className="py-2.5 pr-6 text-xs whitespace-nowrap">
+                        {entry.weight_kg
+                          ? <span className="text-emerald-400">{displayWeight(entry.weight_kg, unit)}</span>
+                          : <span className="text-gray-600">—</span>
+                        }
+                      </td>
+                      <td className="py-2.5 pr-6 text-xs">
+                        {entry.sets ?? <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className="py-2.5 text-xs">
+                        {entry.reps ?? <span className="text-gray-600">—</span>}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
