@@ -2,6 +2,8 @@ import ChatInterface from '@/components/chat/ChatInterface'
 import { createClient } from '@/lib/supabase/server'
 import type { ChatMessage } from '@/lib/types'
 
+export const instant = false
+
 export default async function ChatPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
