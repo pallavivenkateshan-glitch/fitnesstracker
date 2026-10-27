@@ -37,26 +37,46 @@ WEIGHT TREND:
 ${(weightRes.data ?? []).map(w => `${format(new Date(w.logged_at), 'MMM d')}: ${w.weight_kg.toFixed(1)}kg`).join(' → ') || 'No weight logged'}
 `
 
-    const systemPrompt = `You are a personal fitness and nutrition coach with access to the user's actual tracking data. Answer questions about their nutrition, training, strength progress, and weight trends using the data provided. Be specific, data-driven, and actionable. Keep responses concise (3-5 sentences unless they ask for more detail). Reference actual numbers and dates when relevant.
+    const systemPrompt = `You are a personal fitness and nutrition coach with access to the user's actual tracking data. Answer questions about their nutrition, training, strength progress, and weight trends using the data provided. Be specific, data-driven, and actionable. Keep responses focused, and always finish your thoughts completely. Reference actual numbers and dates when relevant.
 
 USER DATA:
 ${contextData}`
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-5-5',
-      max_tokens: 600,
+      max_tokens: 4096,
       system: systemPrompt,
-      messages: messages.map((m: { role: string; content: string }) => ({
+      messages: messages.slice(-20).map((m: { role: string; content: string }) => ({
         role: m.role,
         content: m.content,
       })),
     })
 
-  const textBlock = response.content.find((b) => b.type === 'text')
-  const reply = textBlock?.type === 'text' ? textBlock.text : ''
+    const textBlock = response.content.find((b) => b.type === 'text')
+    const reply = textBlock && textBlock.type === 'text' ? textBlock.text : ''
+
+    const lastUser = messages[messages.length - 1]
+    if (reply && lastUser?.role === 'user') {
+      const { error: saveError } = await supabase.from('chat_messages').insert([
+        { user_id: user.id, role: 'user', content: lastUser.content },
+        { user_id: user.id, role: 'assistant', content: reply },
+      ])
+      if (saveError) console.error('Chat history save error:', saveError)
+    }
+
     return NextResponse.json({ reply })
   } catch (error) {
     console.error('Chat error:', error)
     return NextResponse.json({ error: 'Failed to get response' }, { status: 500 })
   }
+}
+
+export async function DELETE() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { error } = await supabase.from('chat_messages').delete().eq('user_id', user.id)
+  if (error) return NextResponse.json({ error: 'Failed to clear history' }, { status: 500 })
+  return NextResponse.json({ ok: true })
 }
