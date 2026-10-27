@@ -1,3 +1,4 @@
+
 'use client'
 
 import { useState } from 'react'
@@ -19,7 +20,7 @@ interface StrengthLog {
   squat_weight?: number; squat_sets?: number; squat_reps?: number
   bench_weight?: number; bench_sets?: number; bench_reps?: number
   deadlift_weight?: number; deadlift_sets?: number; deadlift_reps?: number
-  extras?: { exercise: string; sets?: number; reps?: number; weight_kg?: number }[]
+  extras?: { exercise: string; sets?: number; reps?: number; weight_kg?: number; duration_seconds?: number }[]
   logged_at: string
   activities?: { name: string; type: string; logged_at: string }
 }
@@ -140,6 +141,7 @@ export default function StrengthDashboard({ logs }: { logs: StrengthLog[] }) {
     weight_kg?: number
     sets?: number
     reps?: number
+    duration_seconds?: number
   }[]> = {}
 
   logs.forEach((log) => {
@@ -152,9 +154,17 @@ export default function StrengthDashboard({ logs }: { logs: StrengthLog[] }) {
         weight_kg: ex.weight_kg ?? undefined,
         sets: ex.sets ?? undefined,
         reps: ex.reps ?? undefined,
+        duration_seconds: ex.duration_seconds ?? undefined,
       })
     })
   })
+
+  function formatDuration(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    return s > 0 ? `${m}m ${s}s` : `${m}m`
+  }
 
   const accessoryNames = Object.keys(accessoryMap).sort()
 
@@ -197,15 +207,14 @@ export default function StrengthDashboard({ logs }: { logs: StrengthLog[] }) {
                   <th className="text-left pb-3 font-medium pr-6">Date</th>
                   <th className="text-left pb-3 font-medium pr-6">Weight</th>
                   <th className="text-left pb-3 font-medium pr-6">Sets</th>
-                  <th className="text-left pb-3 font-medium">Reps</th>
+                  <th className="text-left pb-3 font-medium pr-6">Reps</th>
+                  <th className="text-left pb-3 font-medium">Time</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/50">
                 {accessoryNames.map((name) =>
-                  // Show all entries for each exercise, most recent first
                   [...accessoryMap[name]].reverse().map((entry, i) => (
                     <tr key={`${name}-${i}`} className="text-gray-300 hover:bg-gray-800/30 transition">
-                      {/* Only show exercise name on first row for that exercise */}
                       <td className="py-2.5 pr-6 align-top">
                         {i === 0 ? (
                           <span className="capitalize font-medium text-white">{name}</span>
@@ -225,8 +234,14 @@ export default function StrengthDashboard({ logs }: { logs: StrengthLog[] }) {
                       <td className="py-2.5 pr-6 text-xs">
                         {entry.sets ?? <span className="text-gray-600">—</span>}
                       </td>
-                      <td className="py-2.5 text-xs">
+                      <td className="py-2.5 pr-6 text-xs">
                         {entry.reps ?? <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className="py-2.5 text-xs whitespace-nowrap">
+                        {entry.duration_seconds
+                          ? <span className="text-blue-400">{formatDuration(entry.duration_seconds)}</span>
+                          : <span className="text-gray-600">—</span>
+                        }
                       </td>
                     </tr>
                   ))
