@@ -78,6 +78,12 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
   const [aiError, setAiError] = useState('')
   const [reanalyzeNote, setReanalyzeNote] = useState('')
+  const [addText, setAddText] = useState('')
+  const [addPhoto, setAddPhoto] = useState<string | null>(null)
+  const [addAnalyzing, setAddAnalyzing] = useState(false)
+  const [addError, setAddError] = useState('')
+  const [addedSummary, setAddedSummary] = useState('')
+  const addFileInputRef = useRef<HTMLInputElement>(null)
   const [showLibrary, setShowLibrary] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -150,6 +156,66 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
       setAiError('Failed to analyze photo. Please enter values manually.')
     } finally {
       setAiAnalyzing(false)
+    }
+  }
+
+  function handleAddPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const original = reader.result as string
+      try {
+        setAddPhoto(await shrinkImage(original))
+      } catch {
+        setAddPhoto(original)
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function addItem() {
+    if (!addPhoto && !addText.trim()) return
+    setAddAnalyzing(true)
+    setAddError('')
+    setAddedSummary('')
+
+    try {
+      const res = await fetch('/api/analyze-meal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: addPhoto?.split(',')[1],
+          mimeType: addPhoto?.startsWith('data:image/jpeg') ? 'image/jpeg' : 'image/png',
+          note: addText.trim(),
+        }),
+      })
+
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data || data.error) {
+        setAddError(
+          res.status === 413
+            ? 'Photo is too large to analyze. Try a smaller one or describe the item instead.'
+            : data?.error ?? `Analysis failed (${res.status}). Please try again.`
+        )
+        return
+      }
+
+      const add = (current: string, extra: unknown) =>
+        String((parseFloat(current) || 0) + (Number(extra) || 0))
+      setCalories((c) => add(c, data.calories))
+      setProtein((p) => add(p, data.protein))
+      setCarbs((c) => add(c, data.carbs))
+      setFat((f) => add(f, data.fat))
+      setName((n) => (data.name ? `${n} + ${data.name}` : n))
+      setAiAssumptions((a) => [a, data.assumptions ? `Added ${data.name}: ${data.assumptions}` : ''].filter(Boolean).join('\n'))
+      setAddedSummary(`Added ${data.name}: ${data.calories} kcal · P ${data.protein}g · C ${data.carbs}g · F ${data.fat}g`)
+      setAddText('')
+      setAddPhoto(null)
+    } catch {
+      setAddError('Failed to analyze item. Please try again or edit the values manually.')
+    } finally {
+      setAddAnalyzing(false)
     }
   }
 
@@ -365,6 +431,59 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
           className="hidden"
         />
       </div>
+
+      {initialMeal && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+          <p className="text-sm font-medium text-gray-400">Add another item to this meal</p>
+          <textarea
+            value={addText}
+            onChange={(e) => setAddText(e.target.value)}
+            placeholder="Describe it, e.g. 1 banana and 2 tbsp peanut butter"
+            rows={2}
+            className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+          />
+          {addPhoto && (
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={addPhoto} alt="Item" className="w-full h-32 object-cover rounded-xl" />
+              <button
+                type="button"
+                onClick={() => setAddPhoto(null)}
+                className="absolute top-2 right-2 bg-black/60 text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => addFileInputRef.current?.click()}
+              className="flex items-center gap-2 text-sm text-gray-400 hover:text-white border border-gray-800 rounded-xl px-3 py-2 cursor-pointer"
+            >
+              <Camera className="w-4 h-4" /> {addPhoto ? 'Change photo' : 'Attach photo'}
+            </button>
+            <button
+              type="button"
+              onClick={addItem}
+              disabled={addAnalyzing || (!addPhoto && !addText.trim())}
+              className="flex items-center gap-2 text-sm bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-white rounded-xl px-3 py-2 cursor-pointer disabled:cursor-not-allowed"
+            >
+              {addAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {addAnalyzing ? 'Analyzing…' : 'Analyze & add'}
+            </button>
+          </div>
+          <input
+            ref={addFileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAddPhotoChange}
+            className="hidden"
+          />
+          {addError && <p className="text-sm text-red-400">{addError}</p>}
+          {addedSummary && <p className="text-sm text-emerald-400">{addedSummary}. Totals below are updated — click Update Meal to save.</p>}
+        </div>
+      )}
 
       {/* Meal details */}
       <div className="space-y-4">
