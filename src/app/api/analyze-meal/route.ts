@@ -32,7 +32,7 @@ Respond in this exact JSON format (no markdown, just JSON):
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-5-5',
-      max_tokens: 500,
+      max_tokens: 2048,
       messages: [
         {
           role: 'user',
@@ -54,7 +54,8 @@ Respond in this exact JSON format (no markdown, just JSON):
       ],
     })
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : ''
+    const textBlock = response.content.find((b) => b.type === 'text')
+    const text = textBlock && textBlock.type === 'text' ? textBlock.text : ''
 
     // Parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/)
