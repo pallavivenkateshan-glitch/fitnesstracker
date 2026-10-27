@@ -12,6 +12,7 @@ import {
   Waves,
   Dumbbell,
   Link as LinkIcon,
+  FileText,
 } from 'lucide-react'
 
 function activityIcon(type: string) {
@@ -75,6 +76,9 @@ export default function StravaPage({
       setSyncing(false)
     }
   }
+
+  // Activities that have notes
+  const activitiesWithNotes = activities.filter((a) => a.notes_raw?.trim())
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
@@ -148,66 +152,114 @@ export default function StravaPage({
           )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {activities.map((activity) => {
-            const strength = activity.strength_logs?.[0]
-            return (
-              <div key={activity.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4 hover:border-gray-700 transition">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    {activityIcon(activity.type)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <p className="text-white font-medium text-sm">{activity.name}</p>
-                      <span className="text-xs text-gray-500">
-                        {format(parseISO(activity.logged_at), 'EEE, MMM d')}
-                      </span>
+        <>
+          <div className="space-y-3">
+            {activities.map((activity) => {
+              const strength = activity.strength_logs?.[0]
+              return (
+                <div key={activity.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4 hover:border-gray-700 transition">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      {activityIcon(activity.type)}
                     </div>
-                    <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-1">
-                      <span className="capitalize">{activity.type.replace(/_/g, ' ')}</span>
-                      {activity.duration && <span>{formatDuration(activity.duration)}</span>}
-                      {activity.distance && <span>{(activity.distance / 1000).toFixed(1)} km</span>}
-                      {activity.heart_rate_avg && <span>❤ {Math.round(activity.heart_rate_avg)} bpm</span>}
-                      {activity.elevation && <span>↑ {Math.round(activity.elevation)}m</span>}
-                    </div>
-
-                    {/* Strength data */}
-                    {strength && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {strength.squat_weight && (
-                          <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-1 rounded-lg">
-                            Squat: {strength.squat_weight}kg {strength.squat_sets}×{strength.squat_reps}
-                          </span>
-                        )}
-                        {strength.bench_weight && (
-                          <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-lg">
-                            Bench: {strength.bench_weight}kg {strength.bench_sets}×{strength.bench_reps}
-                          </span>
-                        )}
-                        {strength.deadlift_weight && (
-                          <span className="text-xs bg-red-500/10 text-red-400 px-2 py-1 rounded-lg">
-                            Deadlift: {strength.deadlift_weight}kg {strength.deadlift_sets}×{strength.deadlift_reps}
-                          </span>
-                        )}
-                        {(strength.extras as { exercise: string; sets?: number; reps?: number }[] ?? []).map((e, i) => (
-                          <span key={i} className="text-xs bg-gray-700 text-gray-400 px-2 py-1 rounded-lg">
-                            {e.exercise}{e.reps ? `: ${e.sets ? e.sets + '×' : ''}${e.reps}` : ''}
-                          </span>
-                        ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <p className="text-white font-medium text-sm">{activity.name}</p>
+                        <span className="text-xs text-gray-500">
+                          {format(parseISO(activity.logged_at), 'EEE, MMM d')}
+                        </span>
                       </div>
-                    )}
+                      <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-1">
+                        <span className="capitalize">{activity.type.replace(/_/g, ' ')}</span>
+                        {activity.duration && <span>{formatDuration(activity.duration)}</span>}
+                        {activity.distance && <span>{(activity.distance / 1000).toFixed(1)} km</span>}
+                        {activity.heart_rate_avg && <span>❤ {Math.round(activity.heart_rate_avg)} bpm</span>}
+                        {activity.elevation && <span>↑ {Math.round(activity.elevation)}m</span>}
+                      </div>
 
-                    {/* Raw notes preview */}
-                    {activity.notes_raw && !strength && (
-                      <p className="text-xs text-gray-600 mt-1 truncate">{activity.notes_raw}</p>
-                    )}
+                      {/* Strength data badges */}
+                      {strength && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {strength.squat_weight && (
+                            <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-1 rounded-lg">
+                              Squat: {strength.squat_weight}kg {strength.squat_sets}×{strength.squat_reps}
+                            </span>
+                          )}
+                          {strength.bench_weight && (
+                            <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded-lg">
+                              Bench: {strength.bench_weight}kg {strength.bench_sets}×{strength.bench_reps}
+                            </span>
+                          )}
+                          {strength.deadlift_weight && (
+                            <span className="text-xs bg-red-500/10 text-red-400 px-2 py-1 rounded-lg">
+                              Deadlift: {strength.deadlift_weight}kg {strength.deadlift_sets}×{strength.deadlift_reps}
+                            </span>
+                          )}
+                          {(strength.extras as { exercise: string; sets?: number; reps?: number }[] ?? []).map((e, i) => (
+                            <span key={i} className="text-xs bg-gray-700 text-gray-400 px-2 py-1 rounded-lg">
+                              {e.exercise}{e.reps ? `: ${e.sets ? e.sets + '×' : ''}${e.reps}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Full notes — always shown when present, not truncated */}
+                      {activity.notes_raw && (
+                        <p className="text-xs text-gray-400 mt-2 whitespace-pre-wrap leading-relaxed">
+                          {activity.notes_raw}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
+              )
+            })}
+          </div>
+
+          {/* ── Workout Notes Table ── */}
+          {activitiesWithNotes.length > 0 && (
+            <div className="mt-10">
+              <div className="flex items-center gap-2 mb-4">
+                <FileText className="w-5 h-5 text-gray-400" />
+                <h2 className="text-lg font-semibold text-white">Workout Notes</h2>
+                <span className="text-xs text-gray-600 ml-1">({activitiesWithNotes.length} activities)</span>
               </div>
-            )
-          })}
-        </div>
+
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800">
+                      <th className="text-left text-xs text-gray-500 font-medium px-4 py-3 w-28">Date</th>
+                      <th className="text-left text-xs text-gray-500 font-medium px-4 py-3 w-40">Activity</th>
+                      <th className="text-left text-xs text-gray-500 font-medium px-4 py-3">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activitiesWithNotes.map((activity, i) => (
+                      <tr
+                        key={activity.id}
+                        className={`border-b border-gray-800/50 ${i % 2 === 0 ? '' : 'bg-gray-800/20'}`}
+                      >
+                        <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap align-top">
+                          {format(parseISO(activity.logged_at), 'MMM d, yyyy')}
+                        </td>
+                        <td className="px-4 py-3 text-gray-300 text-xs align-top">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-gray-500">{activityIcon(activity.type)}</span>
+                            {activity.name}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-300 text-xs whitespace-pre-wrap leading-relaxed align-top">
+                          {activity.notes_raw}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
