@@ -7,11 +7,11 @@ export async function POST(req: NextRequest) {
   try {
     const { imageBase64, mimeType, note } = await req.json()
 
-    if (!imageBase64) {
-      return NextResponse.json({ error: 'No image provided' }, { status: 400 })
+    if (!imageBase64 && !note?.trim()) {
+      return NextResponse.json({ error: 'Provide a photo or a description' }, { status: 400 })
     }
 
-    const prompt = `You are a nutrition expert analyzing a meal photo. 
+    const prompt = `You are a nutrition expert analyzing ${imageBase64 ? 'a meal photo' : 'a food description'}. 
 ${note ? `Additional context from user: "${note}"` : ''}
 
 Please analyze this meal and provide:
@@ -37,16 +37,20 @@ Respond in this exact JSON format (no markdown, just JSON):
         {
           role: 'user',
           content: [
+            ...(imageBase64
+              ? [
+                  {
+                    type: 'image' as const,
+                    source: {
+                      type: 'base64' as const,
+                      media_type: mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                      data: imageBase64,
+                    },
+                  },
+                ]
+              : []),
             {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-                data: imageBase64,
-              },
-            },
-            {
-              type: 'text',
+              type: 'text' as const,
               text: prompt,
             },
           ],
