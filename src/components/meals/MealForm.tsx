@@ -25,6 +25,24 @@ const mealTypeColors: Record<MealType, string> = {
   dinner: 'border-emerald-500 text-emerald-400',
 }
 
+function shrinkImage(dataUrl: string, maxSide = 1600): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return reject(new Error('no canvas'))
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', 0.8))
+    }
+    img.onerror = reject
+    img.src = dataUrl
+  })
+}
+
 interface Props {
   defaultType: MealType
   libraryMeals: MealLibraryItem[]
@@ -80,8 +98,16 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
     const file = e.target.files?.[0]
     if (!file) return
     setPhotoFile(file)
+    setAiError('')
     const reader = new FileReader()
-    reader.onload = () => setPhotoPreview(reader.result as string)
+    reader.onload = async () => {
+      const original = reader.result as string
+      try {
+        setPhotoPreview(await shrinkImage(original))
+      } catch {
+        setPhotoPreview(original)
+      }
+    }
     reader.readAsDataURL(file)
   }
 
@@ -98,13 +124,19 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64: base64,
-          mimeType: photoFile?.type ?? 'image/jpeg',
+          mimeType: photoPreview?.startsWith('data:image/jpeg') ? 'image/jpeg' : (photoFile?.type ?? 'image/jpeg'),
           note: note ?? '',
         }),
       })
 
-      const data = await res.json()
-      if (data.error) {
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data) {
+        setAiError(
+          res.status === 413
+            ? 'Photo is too large to analyze. Try a smaller one or enter values manually.'
+            : data?.error ?? `Analysis failed (${res.status}). Please try again or enter values manually.`
+        )
+      } else if (data.error) {
         setAiError(data.error)
       } else {
         setName(data.name ?? name)
