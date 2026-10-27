@@ -142,16 +142,20 @@ export async function POST() {
       }
 
       if (existing) {
-        // ── UPDATE PATH: existing activity with no notes yet ──
-        if (!existing.notes_raw && notes) {
+        // ── UPDATE PATH: existing activity ──
+        const notesToUse = notes || existing.notes_raw || ''
+
+        // Update notes_raw if we now have better notes (private_note > old description)
+        if (notes && existing.notes_raw !== notes) {
           await supabase
             .from('activities')
             .update({ notes_raw: notes })
             .eq('id', existing.id)
-
           updated++
+        }
 
-          // Check if a strength log already exists for this activity
+        // Parse strength if notes exist but no strength log yet
+        if (notesToUse) {
           const { data: existingStrength } = await supabase
             .from('strength_logs')
             .select('id')
@@ -161,7 +165,7 @@ export async function POST() {
           if (!existingStrength) {
             const didParse = await parseAndSaveStrength(
               supabase,
-              notes,
+              notesToUse,
               user.id,
               existing.id,
               activity.start_date
