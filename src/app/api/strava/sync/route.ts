@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import Anthropic from '@anthropic-ai/sdk'
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 async function refreshStravaToken(refreshToken: string) {
   const res = await fetch('https://www.strava.com/oauth/token', {
@@ -23,6 +26,54 @@ async function fetchActivityDetail(activityId: number, accessToken: string) {
   return res.json()
 }
 
+// Call Claude directly — no HTTP roundtrip to /api/parse-strength
+async function parseStrengthNotes(notes: string) {
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-5-5',
+      max_tokens: 500,
+      messages: [
+        {
+          role: 'user',
+          content: `Extract strength training data from these workout notes. Return ONLY valid JSON with no markdown.
+
+Notes: "${notes}"
+
+Return this exact JSON structure (use null for missing values):
+{
+  "squat": { "weight_kg": null, "sets": null, "reps": null },
+  "bench": { "weight_kg": null, "sets": null, "reps": null },
+  "deadlift": { "weight_kg": null, "sets": null, "reps": null },
+  "extras": []
+}
+
+Rules:
+- Convert lbs to kg if units are specified (divide by 2.205)
+- If weight is given without units, assume kg
+- Bench press / bench = bench field
+- Extras are any exercises not squat/bench/deadlift, each as { "exercise": "name", "sets": null, "reps": null, "weight_kg": null }
+- If no strength data found at all, return null`,
+        },
+      ],
+    })
+
+    const textBlock = response.content.find((b) => b.type === 'text')
+    if (!textBlock || textBlock.type !== 'text') return null
+
+    // Strip markdown fences if present
+    const raw = textBlock.text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+
+    // Handle explicit null response
+    if (raw === 'null') return null
+
+    const parsed = JSON.parse(raw)
+    return parsed
+  } catch (e) {
+    console.error('Claude parse error:', e)
+    return null
+  }
+}
+
 async function parseAndSaveStrength(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createClient>>,
   notes: string,
@@ -31,15 +82,7 @@ async function parseAndSaveStrength(
   loggedAt: string
 ): Promise<boolean> {
   try {
-    const parseRes = await fetch(
-      `${process.env.NEXT_PUBLIC_APP_URL}/api/parse-strength`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes }),
-      }
-    )
-    const { data: strengthData } = await parseRes.json()
+    const strengthData = await parseStrengthNotes(notes)
 
     if (!strengthData) return false
 
@@ -145,7 +188,7 @@ export async function POST() {
         // ── UPDATE PATH: existing activity ──
         const notesToUse = notes || existing.notes_raw || ''
 
-        // Update notes_raw if we now have better notes (private_note > old description)
+        // Update notes_raw if we now have better notes (private_note > old value)
         if (notes && existing.notes_raw !== notes) {
           await supabase
             .from('activities')
