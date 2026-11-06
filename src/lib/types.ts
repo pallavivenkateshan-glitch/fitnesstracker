@@ -10,6 +10,7 @@ export interface Meal {
   carbs: number
   fat: number
   photo_url?: string
+  photo_urls?: string[]
   notes?: string
   ai_assumptions?: string
   logged_at: string
@@ -62,10 +63,16 @@ export interface StrengthLog {
   logged_at: string
 }
 
+export type ExtraCategory = 'plank' | 'side_plank' | 'farmers_walk' | 'accessory'
+
 export interface ExtraExercise {
   exercise: string
+  category?: ExtraCategory
   sets?: number
   reps?: number
+  weight_kg?: number
+  duration_seconds?: number
+  distance_m?: number
 }
 
 export interface WeightLog {
