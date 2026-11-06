@@ -5,13 +5,20 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageBase64, mimeType, note } = await req.json()
+    const body = await req.json()
+    const { note } = body
+    // Accept images[] (up to 2 photos of the same meal); legacy single imageBase64 still works
+    const images: { base64: string; mimeType: string }[] = Array.isArray(body.images)
+      ? body.images.filter((i: { base64?: string }) => i?.base64).slice(0, 2)
+      : body.imageBase64
+        ? [{ base64: body.imageBase64, mimeType: body.mimeType }]
+        : []
 
-    if (!imageBase64 && !note?.trim()) {
+    if (images.length === 0 && !note?.trim()) {
       return NextResponse.json({ error: 'Provide a photo or a description' }, { status: 400 })
     }
 
-    const prompt = `You are a nutrition expert analyzing ${imageBase64 ? 'a meal photo' : 'a food description'}. 
+    const prompt = `You are a nutrition expert analyzing ${images.length > 1 ? 'photos of the same meal (e.g. different angles; do not double count)' : images.length === 1 ? 'a meal photo' : 'a food description'}. 
 ${note ? `Additional context from user: "${note}"` : ''}
 
 Please analyze this meal and provide:
@@ -37,18 +44,14 @@ Respond in this exact JSON format (no markdown, just JSON):
         {
           role: 'user',
           content: [
-            ...(imageBase64
-              ? [
-                  {
-                    type: 'image' as const,
-                    source: {
-                      type: 'base64' as const,
-                      media_type: mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-                      data: imageBase64,
-                    },
-                  },
-                ]
-              : []),
+            ...images.map((img) => ({
+              type: 'image' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: (img.mimeType || 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                data: img.base64,
+              },
+            })),
             {
               type: 'text' as const,
               text: prompt,
