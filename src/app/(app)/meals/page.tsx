@@ -109,9 +109,13 @@ export default async function MealsPage() {
                       className="flex items-center gap-4 p-4 bg-gray-900 border border-gray-800 rounded-2xl hover:border-gray-700 transition"
                     >
                       <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-gray-800 flex items-center justify-center">
-                        {meal.photo_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={meal.photo_url} alt={meal.name} className="w-full h-full object-cover" />
+                        {(meal.photo_urls?.length ? meal.photo_urls : meal.photo_url ? [meal.photo_url] : []).length > 0 ? (
+                          <div className="flex w-full h-full">
+                            {(meal.photo_urls?.length ? meal.photo_urls : [meal.photo_url!]).slice(0, 2).map((url: string) => (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img key={url} src={url} alt={meal.name} className="h-full min-w-0 flex-1 object-cover" />
+                            ))}
+                          </div>
                         ) : (
                           <Camera className="w-5 h-5 text-gray-600" />
                         )}
