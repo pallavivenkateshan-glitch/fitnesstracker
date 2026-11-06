@@ -2,13 +2,12 @@
 
 import { useState } from 'react'
 import { format, parseISO, subDays } from 'date-fns'
-import { Trophy, Dumbbell, TrendingUp, TrendingDown } from 'lucide-react'
+import { Trophy, Dumbbell, TrendingUp } from 'lucide-react'
 import type { ExtraExercise } from '@/lib/types'
 import {
   type Unit,
   displayWeight,
   formatDuration,
-  epley,
   sessionVolume,
   classifyExtra,
 } from '@/lib/strength'
@@ -39,7 +38,6 @@ interface Session {
   sets?: number
   reps?: number
   volume: number
-  e1rm: number
 }
 
 const CARD = 'bg-gray-900 border border-gray-800 rounded-2xl p-6'
@@ -61,7 +59,6 @@ function buildSessions(logs: StrengthLog[], lift: LiftKey): Session[] {
         sets,
         reps,
         volume: sessionVolume(weight, sets, reps),
-        e1rm: epley(weight, reps),
       }
     })
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -99,11 +96,15 @@ function LiftCard({
   }
 
   const last = sessions[sessions.length - 1]
-  const pr = sessions.reduce((best, s) => (s.e1rm > best.e1rm ? s : best))
+  // Actual PR: heaviest weight lifted; more reps at that weight wins a tie
+  const better = (a: Session, b: Session) =>
+    a.weight > b.weight || (a.weight === b.weight && (a.reps ?? 0) > (b.reps ?? 0)) ? a : b
+  const pr = sessions.reduce(better)
   const cutoff = subDays(parseISO(last.date), 28).toISOString()
-  const earlier = [...sessions].reverse().find((s) => s.date <= cutoff)
-  const delta = earlier ? last.e1rm - earlier.e1rm : null
-  const isPr = last.id === pr.id && last.e1rm === pr.e1rm
+  const before = sessions.filter((s) => s.date <= cutoff)
+  const priorPr = before.length > 0 ? before.reduce(better) : null
+  const delta = priorPr ? pr.weight - priorPr.weight : null
+  const isPr = last.id === pr.id
 
   return (
     <div className={CARD} style={{ borderTopColor: color, borderTopWidth: 2 }}>
@@ -116,28 +117,26 @@ function LiftCard({
         )}
       </div>
 
-      <p className="text-gray-500 text-xs">Estimated 1RM</p>
-      <p className="text-3xl font-bold text-white leading-tight">{displayWeight(last.e1rm, unit)}</p>
+      <p className="text-gray-500 text-xs">Personal best</p>
+      <p className="text-3xl font-bold text-white leading-tight">{displayWeight(pr.weight, unit)}</p>
+      <p className="text-xs text-gray-400">
+        {pr.sets && pr.reps ? `${pr.sets}×${pr.reps}` : pr.reps ? `${pr.reps} reps` : ''}
+        {' · '}
+        {format(parseISO(pr.date), 'MMM d, yyyy')}
+      </p>
       <div className="h-5 mt-1 text-xs">
         {delta === null ? (
           <span className="text-gray-600">No data from 4+ weeks ago</span>
+        ) : delta === 0 ? (
+          <span className="text-gray-500">Same best as 4 weeks ago</span>
         ) : (
-          <span className={`flex items-center gap-1 ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {delta >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-            {delta >= 0 ? '+' : '−'}
-            {displayWeight(Math.abs(delta), unit)} vs 4 weeks ago
+          <span className="flex items-center gap-1 text-emerald-400">
+            <TrendingUp className="w-3.5 h-3.5" />+{displayWeight(delta, unit)} vs 4 weeks ago
           </span>
         )}
       </div>
 
       <dl className="mt-4 pt-4 border-t border-gray-800 space-y-2 text-xs">
-        <div className="flex justify-between gap-4">
-          <dt className="text-gray-500">Best e1RM</dt>
-          <dd className="text-amber-400 text-right">
-            {displayWeight(pr.e1rm, unit)}{' '}
-            <span className="text-gray-500">({scheme(pr, unit)})</span>
-          </dd>
-        </div>
         <div className="flex justify-between gap-4">
           <dt className="text-gray-500">Last session</dt>
           <dd className="text-gray-300 text-right">
@@ -159,8 +158,8 @@ function SessionsTable({ sessions, unit }: { sessions: Session[]; unit: Unit }) 
 
   if (sessions.length === 0) return null
 
-  const bestByLift = new Map<LiftKey, number>()
-  sessions.forEach((s) => bestByLift.set(s.lift, Math.max(bestByLift.get(s.lift) ?? 0, s.e1rm)))
+  const prWeight = new Map<LiftKey, number>()
+  sessions.forEach((s) => prWeight.set(s.lift, Math.max(prWeight.get(s.lift) ?? 0, s.weight)))
 
   const filtered = sessions
     .filter((s) => filter === 'all' || s.lift === filter)
@@ -194,14 +193,13 @@ function SessionsTable({ sessions, unit }: { sessions: Session[]; unit: Unit }) 
               <th className={TH}>Date</th>
               <th className={TH}>Lift</th>
               <th className={TH}>Weight × Sets × Reps</th>
-              <th className={TH}>Volume</th>
-              <th className={`${TH} pr-0`}>e1RM</th>
+              <th className={`${TH} pr-0`}>Volume</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800/50">
             {rows.map((s) => {
               const lift = LIFTS.find((l) => l.key === s.lift)!
-              const isBest = s.e1rm === bestByLift.get(s.lift)
+              const isPr = s.weight === prWeight.get(s.lift)
               return (
                 <tr key={`${s.lift}-${s.id}`} className="text-gray-300 hover:bg-gray-800/30 transition">
                   <td className="py-2.5 pr-6 text-gray-400 text-xs whitespace-nowrap">
@@ -213,15 +211,14 @@ function SessionsTable({ sessions, unit }: { sessions: Session[]; unit: Unit }) 
                       {lift.label}
                     </span>
                   </td>
-                  <td className="py-2.5 pr-6 text-xs whitespace-nowrap">{scheme(s, unit)}</td>
-                  <td className="py-2.5 pr-6 text-xs whitespace-nowrap text-gray-400">
-                    {displayWeight(s.volume, unit)}
-                  </td>
-                  <td className="py-2.5 text-xs whitespace-nowrap">
-                    <span className={isBest ? 'text-amber-400 inline-flex items-center gap-1' : ''}>
-                      {isBest && <Trophy className="w-3 h-3" />}
-                      {displayWeight(s.e1rm, unit)}
+                  <td className="py-2.5 pr-6 text-xs whitespace-nowrap">
+                    <span className={isPr ? 'text-amber-400 inline-flex items-center gap-1' : ''}>
+                      {isPr && <Trophy className="w-3 h-3" />}
+                      {scheme(s, unit)}
                     </span>
+                  </td>
+                  <td className="py-2.5 text-xs whitespace-nowrap text-gray-400">
+                    {displayWeight(s.volume, unit)}
                   </td>
                 </tr>
               )
@@ -413,18 +410,12 @@ export default function StrengthDashboard({ logs }: { logs: StrengthLog[] }) {
         </div>
       </div>
 
-      {/* Main lifts: estimated 1RM so lighter, higher-rep days still count */}
+      {/* Main lifts: actual personal bests */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {LIFTS.map((l) => (
           <LiftCard key={l.key} label={l.label} color={l.color} sessions={sessionsByLift[l.key]} unit={unit} />
         ))}
       </div>
-      {allSessions.length > 0 && (
-        <p className="text-xs text-gray-600 -mt-3">
-          Estimated 1RM = weight × (1 + reps ÷ 30). It lets a 90 kg × 10 day compare fairly with a heavier, lower-rep day.
-        </p>
-      )}
-
       <SessionsTable sessions={allSessions} unit={unit} />
       <CoreAndCarries entries={core} unit={unit} />
       <AccessoryTable entries={accessory} unit={unit} />
