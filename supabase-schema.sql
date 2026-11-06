@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
   calorie_target INTEGER NOT NULL DEFAULT 2000,
-  protein_target INTEGER NOT NULL DEFAULT 150,
+  protein_target INTEGER NOT NULL DEFAULT 100,
   carbs_target INTEGER NOT NULL DEFAULT 200,
   fat_target INTEGER NOT NULL DEFAULT 65,
   weight_unit TEXT CHECK (weight_unit IN ('kg', 'lbs')) NOT NULL DEFAULT 'kg',
@@ -171,3 +171,25 @@ CREATE POLICY "Users can delete own strava tokens" ON strava_tokens FOR DELETE U
 CREATE POLICY "Users can view own settings" ON user_settings FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own settings" ON user_settings FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own settings" ON user_settings FOR UPDATE USING (auth.uid() = user_id);
+
+
+-- Chat history
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  role TEXT CHECK (role IN ('user', 'assistant')) NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS chat_messages_user_created_idx ON chat_messages (user_id, created_at);
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own chat messages" ON chat_messages FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own chat messages" ON chat_messages FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can delete own chat messages" ON chat_messages FOR DELETE USING (auth.uid() = user_id);
+
+-- One-off: fix existing protein goal
+UPDATE user_settings SET protein_target = 100 WHERE protein_target = 150;
+
+-- Two photos per meal (run once)
+ALTER TABLE meals ADD COLUMN IF NOT EXISTS photo_urls TEXT[] DEFAULT '{}';
+UPDATE meals SET photo_urls = ARRAY[photo_url] WHERE photo_url IS NOT NULL AND (photo_urls IS NULL OR photo_urls = '{}');
