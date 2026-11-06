@@ -29,7 +29,8 @@ async function parseAndSaveStrength(
   notes: string,
   userId: string,
   activityId: string,
-  loggedAt: string
+  loggedAt: string,
+  existingLogId?: string
 ): Promise<boolean> {
   try {
     const strengthData = await parseStrengthNotes(notes)
@@ -44,7 +45,7 @@ async function parseAndSaveStrength(
 
     if (!hasStrengthData) return false
 
-    await supabase.from('strength_logs').insert({
+    const row = {
       user_id: userId,
       activity_id: activityId,
       squat_weight: strengthData.squat?.weight_kg,
@@ -58,7 +59,13 @@ async function parseAndSaveStrength(
       deadlift_reps: strengthData.deadlift?.reps,
       extras: strengthData.extras ?? [],
       logged_at: loggedAt,
-    })
+    }
+
+    if (existingLogId) {
+      await supabase.from('strength_logs').update(row).eq('id', existingLogId)
+    } else {
+      await supabase.from('strength_logs').insert(row)
+    }
     return true
   } catch (e) {
     console.error('Strength parse error for activity', activityId, e)
@@ -147,21 +154,28 @@ export async function POST() {
           updated++
         }
 
-        // Parse strength if notes exist but no strength log yet
+        // Parse strength if there's no log yet, or re-parse an existing log when the notes
+        // changed or it was saved before exercise categories/durations were captured
         if (notesToUse) {
           const { data: existingStrength } = await supabase
             .from('strength_logs')
-            .select('id')
+            .select('id, extras')
             .eq('activity_id', existing.id)
-            .single()
+            .maybeSingle()
 
-          if (!existingStrength) {
+          const notesChanged = !!notes && existing.notes_raw !== notes
+          const legacyExtras =
+            Array.isArray(existingStrength?.extras) &&
+            existingStrength.extras.some((e: { category?: string }) => !e.category)
+
+          if (!existingStrength || notesChanged || legacyExtras) {
             const didParse = await parseAndSaveStrength(
               supabase,
               notesToUse,
               user.id,
               existing.id,
-              activity.start_date
+              activity.start_date,
+              existingStrength?.id
             )
             if (didParse) parsed++
           }
