@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import type { MealType, MealLibraryItem } from '@/lib/types'
 
+const MAX_PHOTOS = 2
+
 const mealTypes: MealType[] = ['breakfast', 'lunch', 'snack', 'dinner']
 
 const mealTypeColors: Record<MealType, string> = {
@@ -25,7 +27,7 @@ const mealTypeColors: Record<MealType, string> = {
   dinner: 'border-emerald-500 text-emerald-400',
 }
 
-function shrinkImage(dataUrl: string, maxSide = 1600): Promise<string> {
+function shrinkImage(dataUrl: string, maxSide = 1280): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
@@ -72,8 +74,8 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
   const [fat, setFat] = useState(initialMeal?.fat?.toString() ?? '')
   const [notes, setNotes] = useState(initialMeal?.notes ?? '')
   const [saveToLibrary, setSaveToLibrary] = useState(false)
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [photoFiles, setPhotoFiles] = useState<File[]>([])
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [aiAssumptions, setAiAssumptions] = useState('')
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
   const [aiError, setAiError] = useState('')
@@ -101,36 +103,45 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
   }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setPhotoFile(file)
+    const picked = Array.from(e.target.files ?? []).slice(0, MAX_PHOTOS - photoFiles.length)
+    e.target.value = ''
+    if (picked.length === 0) return
     setAiError('')
-    const reader = new FileReader()
-    reader.onload = async () => {
-      const original = reader.result as string
-      try {
-        setPhotoPreview(await shrinkImage(original))
-      } catch {
-        setPhotoPreview(original)
+    picked.forEach((file) => {
+      const reader = new FileReader()
+      reader.onload = async () => {
+        const original = reader.result as string
+        let preview = original
+        try {
+          preview = await shrinkImage(original)
+        } catch {}
+        setPhotoFiles((prev) => (prev.length >= MAX_PHOTOS ? prev : [...prev, file]))
+        setPhotoPreviews((prev) => (prev.length >= MAX_PHOTOS ? prev : [...prev, preview]))
       }
-    }
-    reader.readAsDataURL(file)
+      reader.readAsDataURL(file)
+    })
+  }
+
+  function removePhoto(index: number) {
+    setPhotoFiles((prev) => prev.filter((_, i) => i !== index))
+    setPhotoPreviews((prev) => prev.filter((_, i) => i !== index))
+    setAiAssumptions('')
   }
 
   async function analyzePhoto(note?: string) {
-    if (!photoFile && !photoPreview) return
+    if (photoPreviews.length === 0) return
     setAiAnalyzing(true)
     setAiError('')
 
     try {
-      // Convert file to base64
-      const base64 = photoPreview?.split(',')[1]
       const res = await fetch('/api/analyze-meal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: base64,
-          mimeType: photoPreview?.startsWith('data:image/jpeg') ? 'image/jpeg' : (photoFile?.type ?? 'image/jpeg'),
+          images: photoPreviews.map((p) => ({
+            base64: p.split(',')[1],
+            mimeType: p.startsWith('data:image/jpeg') ? 'image/jpeg' : (p.match(/^data:([^;]+)/)?.[1] ?? 'image/jpeg'),
+          })),
           note: note ?? '',
         }),
       })
@@ -226,21 +237,21 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
     setSaving(true)
     setError('')
 
-    let photoUrl = null
+    const photoUrls: string[] = []
 
-    // Upload photo to Supabase Storage if provided
-    if (photoFile) {
-      const ext = photoFile.name.split('.').pop()
-      const path = `${userId}/${Date.now()}.${ext}`
+    // Upload photos to Supabase Storage if provided
+    for (const [i, file] of photoFiles.entries()) {
+      const ext = file.name.split('.').pop()
+      const path = `${userId}/${Date.now()}-${i}.${ext}`
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('meal-photos')
-        .upload(path, photoFile, { contentType: photoFile.type })
+        .upload(path, file, { contentType: file.type })
 
       if (!uploadError && uploadData) {
         const { data: urlData } = supabase.storage
           .from('meal-photos')
           .getPublicUrl(uploadData.path)
-        photoUrl = urlData.publicUrl
+        photoUrls.push(urlData.publicUrl)
       }
     }
 
@@ -253,7 +264,8 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
       carbs: parseFloat(carbs) || 0,
       fat: parseFloat(fat) || 0,
       notes,
-      photo_url: photoUrl,
+      // Only overwrite stored photos when new ones were chosen (keeps existing photos on edit)
+      ...(photoUrls.length > 0 ? { photo_url: photoUrls[0], photo_urls: photoUrls } : {}),
       ai_assumptions: aiAssumptions || null,
       logged_at: new Date().toISOString(),
     }
@@ -354,18 +366,32 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
         <p className="text-sm font-medium text-gray-400 mb-3">Photo (optional — AI will estimate macros)</p>
 
-        {photoPreview ? (
+        {photoPreviews.length > 0 ? (
           <div className="space-y-3">
-            <div className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={photoPreview} alt="Meal" className="w-full h-48 object-cover rounded-xl" />
-              <button
-                type="button"
-                onClick={() => { setPhotoPreview(null); setPhotoFile(null); setAiAssumptions('') }}
-                className="absolute top-2 right-2 bg-gray-900/80 p-1 rounded-lg text-gray-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+            <div className="grid grid-cols-2 gap-2">
+              {photoPreviews.map((preview, i) => (
+                <div key={i} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={preview} alt={`Meal ${i + 1}`} className="w-full h-48 object-cover rounded-xl" />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(i)}
+                    className="absolute top-2 right-2 bg-gray-900/80 p-1 rounded-lg text-gray-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              {photoPreviews.length < MAX_PHOTOS && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="h-48 border-2 border-dashed border-gray-700 hover:border-gray-600 rounded-xl flex flex-col items-center justify-center gap-1 transition cursor-pointer"
+                >
+                  <Upload className="w-6 h-6 text-gray-600" />
+                  <p className="text-xs text-gray-500">Add 2nd photo</p>
+                </button>
+              )}
             </div>
 
             {aiAssumptions && (
@@ -383,7 +409,7 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
                 className="flex-1 flex items-center justify-center gap-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium py-2.5 rounded-xl hover:bg-blue-500/20 transition cursor-pointer disabled:opacity-50"
               >
                 {aiAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-                {aiAnalyzing ? 'Analyzing…' : 'Analyze Photo'}
+                {aiAnalyzing ? 'Analyzing…' : 'Analyze Photo' + (photoPreviews.length > 1 ? 's' : '')}
               </button>
             </div>
 
@@ -418,7 +444,7 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
             className="w-full border-2 border-dashed border-gray-700 hover:border-gray-600 rounded-xl p-8 flex flex-col items-center gap-2 transition cursor-pointer"
           >
             <Upload className="w-8 h-8 text-gray-600" />
-            <p className="text-sm text-gray-500">Click to upload a photo</p>
+            <p className="text-sm text-gray-500">Click to upload up to 2 photos</p>
             <p className="text-xs text-gray-600">JPG, PNG, WEBP up to 10MB</p>
           </button>
         )}
@@ -427,6 +453,7 @@ export default function MealForm({ defaultType, libraryMeals, userId, initialMea
           ref={fileInputRef}
           type="file"
           accept="image/*"
+          multiple
           onChange={handlePhotoChange}
           className="hidden"
         />
