@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { parseStrengthNotes } from '@/lib/parseStrength'
 
 async function refreshStravaToken(refreshToken: string) {
   const res = await fetch('https://www.strava.com/oauth/token', {
@@ -26,54 +24,6 @@ async function fetchActivityDetail(activityId: number, accessToken: string) {
   return res.json()
 }
 
-// Call Claude directly — no HTTP roundtrip to /api/parse-strength
-async function parseStrengthNotes(notes: string) {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-5-5',
-      max_tokens: 500,
-      messages: [
-        {
-          role: 'user',
-          content: `Extract strength training data from these workout notes. Return ONLY valid JSON with no markdown.
-
-Notes: "${notes}"
-
-Return this exact JSON structure (use null for missing values):
-{
-  "squat": { "weight_kg": null, "sets": null, "reps": null },
-  "bench": { "weight_kg": null, "sets": null, "reps": null },
-  "deadlift": { "weight_kg": null, "sets": null, "reps": null },
-  "extras": []
-}
-
-Rules:
-- Convert lbs to kg if units are specified (divide by 2.205)
-- If weight is given without units, assume kg
-- Bench press / bench = bench field
-- Extras are any exercises not squat/bench/deadlift, each as { "exercise": "name", "sets": null, "reps": null, "weight_kg": null }
-- If no strength data found at all, return null`,
-        },
-      ],
-    })
-
-    const textBlock = response.content.find((b) => b.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') return null
-
-    // Strip markdown fences if present
-    const raw = textBlock.text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-
-    // Handle explicit null response
-    if (raw === 'null') return null
-
-    const parsed = JSON.parse(raw)
-    return parsed
-  } catch (e) {
-    console.error('Claude parse error:', e)
-    return null
-  }
-}
-
 async function parseAndSaveStrength(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createClient>>,
   notes: string,
@@ -90,7 +40,7 @@ async function parseAndSaveStrength(
       strengthData.squat?.weight_kg ||
       strengthData.bench?.weight_kg ||
       strengthData.deadlift?.weight_kg ||
-      strengthData.extras?.length > 0
+      (strengthData.extras?.length ?? 0) > 0
 
     if (!hasStrengthData) return false
 
